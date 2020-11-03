@@ -1,3 +1,10 @@
+<<<<<<< HEAD
 .idea
 bot.token
 Father.iml
+=======
+bot.token
+.idea
+Gemfile.lock
+Dad.iml
+>>>>>>> a0f10d30936a9a7e65a084d8f353510e528a1d5d
