@@ -19,13 +19,18 @@ func HandleErr(err error) {
 
 type Broadcast string
 
-var Responses = [6]string{
+var Responses = [11]string{
 	"Want to go fishing?",
 	"Im gonna go grill!",
 	"Gotta go get some milk...",
 	"Wanna throw the pigskin around?",
 	"Good stuff sport!",
-	"Good stuff champ!"}
+	"Good stuff champ!",
+	"Hi $user! I'm dad!",
+	"Want a burger?",
+	"Gotta go to work...",
+	"Get off my lawn!",
+	"Hey $user, want to go for a ride in my jeep?"}
 var Jokes = [15]string{
 	"\"Dad, did you get a haircut?\" \"No, I got them all cut!\"",
 	"My wife is really mad at the fact that I have no sense of direction. So I packed up my stuff and right!",
@@ -43,10 +48,9 @@ var Jokes = [15]string{
 	"What concert costs just 45 cents? 50 Cent featuring Nickelback!",
 	"How do you make a tissue dance? You put a little boogie in it."}
 
-
 const (
-	Embed Broadcast = "EMBED"
-	Plain Broadcast = "PLAIN"
+	Embed    Broadcast = "EMBED"
+	Plain    Broadcast = "PLAIN"
 	DontSend Broadcast = "DONTSEND"
 )
 
@@ -66,17 +70,16 @@ func readLine(file os.File) string {
 const dadJoke string = "https://icanhazdadjoke.com/"
 
 type Joke struct {
-	id string
-	joke string
+	id     string
+	joke   string
 	status int
 }
-
 
 func HandleMsg(session *discord.Session, msg *discord.MessageCreate) {
 	if len(msg.Mentions) > 0 {
 		if msg.Mentions[0].ID == "772951738247544882" {
 			var str, _ = dadRequest(&msg.Content)
-			var _, err = session.ChannelMessageSend(msg.ChannelID, str)
+			var _, err = session.ChannelMessageSend(msg.ChannelID, strings.Replace(str, "$user", msg.Author.Username, -1))
 			HandleErr(err)
 		}
 	}
@@ -97,6 +100,7 @@ func start() {
 			err = bot.Open()
 			HandleErr(err)
 			fmt.Println("Bot started!")
+			_ = bot.UpdateListeningStatus("the election! I am voting Kanye!")
 			sc := make(chan os.Signal, 1)
 			signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 			<-sc
