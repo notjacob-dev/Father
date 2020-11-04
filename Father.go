@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -52,6 +53,8 @@ const (
 	Embed    Broadcast = "EMBED"
 	Plain    Broadcast = "PLAIN"
 	DontSend Broadcast = "DONTSEND"
+	Meme     Broadcast = "MEME"
+	NumMemes int       = 10
 )
 
 func contains(str string, substr string) bool {
@@ -78,7 +81,11 @@ type Joke struct {
 func HandleMsg(session *discord.Session, msg *discord.MessageCreate) {
 	if len(msg.Mentions) > 0 {
 		if msg.Mentions[0].ID == "772951738247544882" {
-			var str, _ = dadRequest(&msg.Content)
+			var str, im, br = dadRequest(&msg.Content)
+			if br == Meme && im != nil {
+				_, _ = session.ChannelFileSend(msg.ChannelID, "dad-meme.jpg", im)
+				return
+			}
 			var _, err = session.ChannelMessageSend(msg.ChannelID, strings.Replace(str, "$user", msg.Author.Username, -1))
 			HandleErr(err)
 		}
@@ -123,17 +130,30 @@ func checkTokenFile() (*os.File, bool) {
 	}
 }
 
-func dadRequest(content *string) (string, Broadcast) {
+func dadRequest(content *string) (string, io.Reader, Broadcast) {
 	var dc = strings.ToLower(*content)
 	if contains(dc, "i love you") {
-		return "I don't love you", Plain
+		return "I don't love you", nil, Plain
 	} else if contains(dc, "joke") {
-		return Jokes[rand.Intn(len(Jokes))], Plain
+		return Jokes[rand.Intn(len(Jokes))], nil, Plain
 	} else if contains(dc, "help") {
-		return "Say \"joke\" to get a dad joke, or anything else to get other responses", Embed
+		return "Say \"joke\" to get a dad joke, or anything else to get other responses", nil, Embed
 	} else if contains(dc, "exit") {
-		return "You will never leave", Plain
+		return "You will never leave", nil, Plain
+	} else if contains(dc, "meme") {
+		r := getMeme()
+		return "", r, Meme
+	} else if contains(dc, "weeb") {
+		return "bruh", nil, Plain
+	} else if contains(dc, "kill me") {
+		return "Ok!", nil, Plain
 	} else {
-		return Responses[rand.Intn(len(Responses))], Plain
+		return Responses[rand.Intn(len(Responses))], nil, Plain
 	}
+}
+func getMeme() io.Reader {
+	var num = rand.Intn(NumMemes)
+	f, err := os.Open("assets/m-" + strconv.Itoa(num) + ".jpg")
+	HandleErr(err)
+	return f
 }
