@@ -1,15 +1,19 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	discord "github.com/bwmarrin/discordgo"
+	"github.com/jonas747/dca"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func HandleErr(err error) {
@@ -19,6 +23,23 @@ func HandleErr(err error) {
 }
 
 type Broadcast string
+
+func GetState(session *discord.Session, user string) (*discord.VoiceState, error) {
+	for _, g := range session.State.Guilds {
+		for _, v := range g.VoiceStates {
+			if v.UserID == user {
+				return v, nil
+			}
+		}
+	}
+	return nil, errors.New("no voice state for user")
+}
+
+func JoinVcSession(session *discord.Session, voice *discord.VoiceState) (*discord.VoiceConnection, error) {
+	var v, e = session.ChannelVoiceJoin(voice.GuildID, voice.ChannelID, false, false)
+	currentVoice = v
+	return v, e
+}
 
 var Responses = [11]string{
 	"Want to go fishing?",
@@ -49,12 +70,16 @@ var Jokes = [15]string{
 	"What concert costs just 45 cents? 50 Cent featuring Nickelback!",
 	"How do you make a tissue dance? You put a little boogie in it."}
 
+var currentVoice *discord.VoiceConnection = nil
+
 const (
 	Embed    Broadcast = "EMBED"
 	Plain    Broadcast = "PLAIN"
 	DontSend Broadcast = "DONTSEND"
 	Meme     Broadcast = "MEME"
 	NumMemes int       = 10
+	Voice    Broadcast = "VOICE"
+	NumSongs int       = 1
 )
 
 func contains(str string, substr string) bool {
@@ -70,12 +95,33 @@ func readLine(file os.File) string {
 	return string(bytes)
 }
 
-const dadJoke string = "https://icanhazdadjoke.com/"
+func PlayAudio(voice *discord.VoiceConnection) {
 
-type Joke struct {
-	id     string
-	joke   string
-	status int
+	r := rand.Intn(NumSongs)
+
+	f, err0 := os.Open("assets/encoded/e-" + strconv.Itoa(r) + ".dca")
+	HandleErr(err0)
+	dc := dca.NewDecoder(f)
+
+	_ = voice.Speaking(true)
+	for {
+		frame, err1 := dc.OpusFrame()
+		if err1 != io.EOF {
+			HandleErr(err1)
+		} else {
+			break
+		}
+		select {
+		case voice.OpusSend <- frame:
+		case <-time.After(time.Second):
+			currentVoice = nil
+			return
+		}
+	}
+	_ = voice.Speaking(false)
+	time.Sleep(250 * time.Millisecond)
+	_ = voice.Disconnect()
+
 }
 
 func HandleMsg(session *discord.Session, msg *discord.MessageCreate) {
@@ -85,10 +131,33 @@ func HandleMsg(session *discord.Session, msg *discord.MessageCreate) {
 			if br == Meme && im != nil {
 				_, _ = session.ChannelFileSend(msg.ChannelID, "dad-meme.jpg", im)
 				return
+			} else if br == Voice {
+				state, _ := GetState(session, msg.Author.ID)
+				if state != nil {
+					con, err := JoinVcSession(session, state)
+					HandleErr(err)
+					go PlayAudio(con)
+				} else {
+					session.ChannelMessageSend(msg.ChannelID, "You aren't in a voice channel! "+Responses[rand.Intn(len(Responses))])
+				}
+				return
+			} else if br == DontSend {
+				return
 			}
 			var _, err = session.ChannelMessageSend(msg.ChannelID, strings.Replace(str, "$user", msg.Author.Username, -1))
 			HandleErr(err)
 		}
+	}
+}
+
+func ToDca(index int) {
+	_, s := os.Stat("encoded.dca")
+	if os.IsNotExist(s) {
+		enc, _ := dca.EncodeFile("assets/sound/s-"+strconv.Itoa(index)+".mp3", dca.StdEncodeOptions)
+		defer enc.Cleanup()
+		out, err01 := os.Create("assets/encoded/e-" + strconv.Itoa(index) + ".dca")
+		HandleErr(err01)
+		io.Copy(out, enc)
 	}
 }
 
@@ -101,6 +170,12 @@ func start() {
 	if ex {
 		var tk = readLine(*file)
 		if tk != "" {
+			var files, _ = ioutil.ReadDir("assets/sound/")
+			for _, f := range files {
+				var str = strings.Split(f.Name(), "-")
+				var in, _ = strconv.Atoi(strings.Split(str[1], ".")[0])
+				ToDca(in)
+			}
 			var bot, err = discord.New(fmt.Sprintf("Bot %s", strings.Replace(tk, "\x00", "", -1)))
 			HandleErr(err)
 			bot.AddHandler(HandleMsg)
@@ -147,13 +222,18 @@ func dadRequest(content *string) (string, io.Reader, Broadcast) {
 		return "bruh", nil, Plain
 	} else if contains(dc, "kill me") {
 		return "Ok!", nil, Plain
+	} else if contains(dc, "music") {
+		return "", nil, Voice
+	} else if contains(dc, "voiceleave") {
+		currentVoice.Disconnect()
+		return "", nil, DontSend
 	} else {
 		return Responses[rand.Intn(len(Responses))], nil, Plain
 	}
 }
 func getMeme() io.Reader {
 	var num = rand.Intn(NumMemes)
-	f, err := os.Open("assets/m-" + strconv.Itoa(num) + ".jpg")
+	f, err := os.Open("assets/memes/m-" + strconv.Itoa(num) + ".jpg")
 	HandleErr(err)
 	return f
 }
