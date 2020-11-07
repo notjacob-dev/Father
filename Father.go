@@ -225,7 +225,9 @@ func dadRequest(content *string) (string, io.Reader, Broadcast) {
 	} else if contains(dc, "music") {
 		return "", nil, Voice
 	} else if contains(dc, "voiceleave") {
-		currentVoice.Disconnect()
+		if currentVoice != nil {
+			_ = currentVoice.Disconnect()
+		}
 		return "", nil, DontSend
 	} else {
 		return Responses[rand.Intn(len(Responses))], nil, Plain
